@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const v = 20000
+const v = 40000
 
 var edges [v][v]bool
 

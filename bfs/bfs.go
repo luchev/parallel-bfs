@@ -15,6 +15,20 @@ import (
 	"time"
 )
 
+/* Queue
+queue := make([]int, 0)
+// Push to the queue
+queue = append(queue, 1)
+// Top (just get next element, don't remove it)
+x = queue[0]
+// Discard top element
+queue = queue[1:]
+// Is empty ?
+if len(queue) == 0 {
+    fmt.Println("Queue is empty !")
+}
+*/
+
 var log logger
 var prop properties
 var computeTime time.Duration
@@ -29,8 +43,10 @@ func main() {
 		saveGraph(graph, prop.outputFile)
 	} else if prop.vertices != 0 {
 		var graph = generateGraph(prop)
-		parentArray := bfsSerial(graph, prop)
-		log.info(len(parentArray))
+		parentSerial := bfsSerial(graph, prop)
+		log.info(len(parentSerial))
+		parentParallel := bfsParallel(graph, prop)
+		log.info(len(parentParallel))
 	} else if prop.inputFile != "" {
 		// TODO
 	} else {
@@ -83,7 +99,7 @@ func bfsSerial(graph matrixGraph, prop properties) (parent []int) {
 		}
 	}
 
-	log.verbose("BFS using 1 thread took ", time.Since(startBFS))
+	log.verbose("Serial BFS using 1 thread took ", time.Since(startBFS))
 	return parent
 }
 
@@ -104,6 +120,45 @@ func bfsSerialFromNode(graph matrixGraph, parent []int, visited []bool, start in
 			}
 		}
 	}
+}
+
+func bfsParallel(graph matrixGraph, prop properties) (parent []int) {
+	startBFS := time.Now()
+
+	visited := make([]bool, prop.vertices)
+	parent = make([]int, prop.vertices)
+	for i := range parent {
+		parent[i] = -1
+	}
+
+	var bfsWG sync.WaitGroup
+	for threadID := 0; threadID < prop.threads; threadID++ {
+		bfsWG.Add(1)
+		go bfsParallelWorker(graph, prop, &bfsWG, threadID, parent, visited)
+	}
+	bfsWG.Wait()
+
+	log.verbose("Parallel BFS using ", prop.threads, " threads took ", time.Since(startBFS))
+	return parent
+}
+
+func bfsParallelWorker(graph matrixGraph, prop properties, bfsWG *sync.WaitGroup, id int, parent []int, visited []bool) {
+	defer bfsWG.Done()
+
+	startWorker := time.Now()
+	log.verbose("Starting graph traversal worker-", id)
+
+	for currentVertex := id; currentVertex < prop.vertices; currentVertex += prop.threads {
+		for i := 0; i < prop.vertices; i++ {
+			if graph[currentVertex][i] {
+				if !visited[i] {
+					visited[i] = true
+					parent[i] = currentVertex
+				}
+			}
+		}
+	}
+	log.verbose("Graph traversal worker-", id, " took ", time.Since(startWorker))
 }
 
 func (t *logger) info(args ...interface{}) {
@@ -170,14 +225,32 @@ func generateGraph(prop properties) matrixGraph {
 	log.verbose("Memory alocation took ", time.Since(startMemoryAllocation))
 
 	startGraphGeneration := time.Now()
-	var wg sync.WaitGroup
+	var graphGenerateWG sync.WaitGroup
 	for threadID := 0; threadID < prop.threads; threadID++ {
-		wg.Add(1)
-		go generateGraphWorker(graph, prop, &wg, threadID)
+		graphGenerateWG.Add(1)
+		go generateGraphWorker(graph, prop, &graphGenerateWG, threadID)
 	}
-	wg.Wait()
+	graphGenerateWG.Wait()
 	log.verbose("Graph generation took ", time.Since(startGraphGeneration))
 	return graph
+}
+
+func generateGraphWorker(graph matrixGraph, prop properties, graphGenerateWG *sync.WaitGroup, id int) {
+	defer graphGenerateWG.Done()
+
+	startWorker := time.Now()
+	log.verbose("Starting graph generating worker-", id)
+
+	source := rand.NewSource(time.Now().UnixNano())
+	generator := rand.New(source)
+	for row := id; row < prop.vertices; row += prop.threads {
+		var b []byte = make([]byte, prop.vertices)
+		generator.Read(b)
+		for k := 0; k < prop.vertices; k++ {
+			graph[row][k] = int(b[k]) < prop.density
+		}
+	}
+	log.verbose("Graph generating worker-", id, " took ", time.Since(startWorker))
 }
 
 func initProperties() properties {
@@ -205,22 +278,4 @@ func initProperties() properties {
 	prop.density = int(math.Ceil(float64(prop.density) * 2.56))
 
 	return prop
-}
-
-func generateGraphWorker(graph matrixGraph, prop properties, wg *sync.WaitGroup, id int) {
-	defer wg.Done()
-
-	startWorker := time.Now()
-	log.verbose("Starting graph generating worker-", id)
-
-	source := rand.NewSource(time.Now().UnixNano())
-	generator := rand.New(source)
-	for row := id; row < prop.vertices; row += prop.threads {
-		var b []byte = make([]byte, prop.vertices)
-		generator.Read(b)
-		for k := 0; k < prop.vertices; k++ {
-			graph[row][k] = int(b[k]) < prop.density
-		}
-	}
-	log.verbose("Graph generating worker-", id, " took ", time.Since(startWorker))
 }

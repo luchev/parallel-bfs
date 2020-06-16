@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"container/list"
 	"flag"
@@ -11,6 +12,8 @@ import (
 	"math/rand"
 	"os"
 	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -39,16 +42,16 @@ func main() {
 	prop = initProperties()
 
 	if prop.generate {
-		var graph = generateGraph(prop)
-		saveGraph(graph, prop.outputFile)
+		var graph = generateDirectedGraph()
+		saveGraph(graph)
 	} else if prop.vertices != 0 {
-		var graph = generateGraph(prop)
-		parentSerial := bfsSerial(graph, prop)
-		log.info(len(parentSerial))
-		parentParallel := bfsParallel(graph, prop)
-		log.info(len(parentParallel))
+		var graph = generateDirectedGraph()
+		saveGraph(graph)
+		parentFunction := parallelTraversal(graph)
+		saveTraversalParentArray(parentFunction)
 	} else if prop.inputFile != "" {
-		// TODO
+		graph := readGraphFromFile()
+		saveGraph(graph)
 	} else {
 		flag.PrintDefaults()
 	}
@@ -71,7 +74,20 @@ type properties struct {
 	outputFile string
 }
 
-func saveGraph(graph matrixGraph, fileName string) {
+func saveTraversalParentArray(parent []int) {
+	file, err := os.OpenFile(prop.outputFile+".parent", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	defer file.Close()
+	if err != nil {
+		log.err("Failed to save graph traversal result in ", prop.outputFile)
+		return
+	}
+	for start, end := range parent {
+		file.WriteString(fmt.Sprint(start, end, "\n"))
+	}
+}
+
+func saveGraph(graph matrixGraph) {
+	fileName := prop.outputFile + ".graph"
 	graphBytes := graph.Bytes()
 
 	startFileSavingTime := time.Now()
@@ -83,10 +99,9 @@ func saveGraph(graph matrixGraph, fileName string) {
 	} else {
 		log.err("Cannot save graph as ", fileName)
 	}
-
 }
 
-func bfsSerial(graph matrixGraph, prop properties) (parent []int) {
+func bfsSerial(graph matrixGraph) (parent []int) {
 	startBFS := time.Now()
 	parent = make([]int, prop.vertices)
 	for i := range parent {
@@ -122,7 +137,7 @@ func bfsSerialFromNode(graph matrixGraph, parent []int, visited []bool, start in
 	}
 }
 
-func bfsParallel(graph matrixGraph, prop properties) (parent []int) {
+func parallelTraversal(graph matrixGraph) (parent []int) {
 	startBFS := time.Now()
 
 	visited := make([]bool, prop.vertices)
@@ -134,7 +149,7 @@ func bfsParallel(graph matrixGraph, prop properties) (parent []int) {
 	var bfsWG sync.WaitGroup
 	for threadID := 0; threadID < prop.threads; threadID++ {
 		bfsWG.Add(1)
-		go bfsParallelWorker(graph, prop, &bfsWG, threadID, parent, visited)
+		go parallelTraversalWorker(graph, &bfsWG, threadID, parent, visited)
 	}
 	bfsWG.Wait()
 
@@ -142,7 +157,7 @@ func bfsParallel(graph matrixGraph, prop properties) (parent []int) {
 	return parent
 }
 
-func bfsParallelWorker(graph matrixGraph, prop properties, bfsWG *sync.WaitGroup, id int, parent []int, visited []bool) {
+func parallelTraversalWorker(graph matrixGraph, bfsWG *sync.WaitGroup, id int, parent []int, visited []bool) {
 	defer bfsWG.Done()
 
 	startWorker := time.Now()
@@ -177,6 +192,15 @@ func (t *logger) err(args ...interface{}) {
 	t.outError.Print(args...)
 }
 
+func (t *logger) fatal(args ...interface{}) {
+	if t.outError == nil {
+		t.outError = golog.New(os.Stderr, "", 0)
+		t.outError.SetPrefix("[ERR] ")
+	}
+	t.outError.Print(args...)
+	os.Exit(1)
+}
+
 func (t *logger) verbose(args ...interface{}) {
 	if prop.quiet {
 		return
@@ -192,7 +216,7 @@ func (graph matrixGraph) String() string {
 	return string(graph.Bytes())
 }
 
-// Bytes converts a graph to a byte string
+// Bytes converts a graph to a byte array suitable to be written to a file
 func (graph matrixGraph) Bytes() []byte {
 	startConvertingGraphToBytes := time.Now()
 
@@ -216,26 +240,21 @@ func (graph matrixGraph) Bytes() []byte {
 	return buffer.Bytes()
 }
 
-func generateGraph(prop properties) matrixGraph {
-	startMemoryAllocation := time.Now()
-	graph := make([][]bool, prop.vertices)
-	for row := 0; row < cap(graph); row++ {
-		graph[row] = make([]bool, prop.vertices)
-	}
-	log.verbose("Memory alocation took ", time.Since(startMemoryAllocation))
+func generateDirectedGraph() matrixGraph {
+	graph := allocateGraphMemory(prop.vertices)
 
 	startGraphGeneration := time.Now()
 	var graphGenerateWG sync.WaitGroup
 	for threadID := 0; threadID < prop.threads; threadID++ {
 		graphGenerateWG.Add(1)
-		go generateGraphWorker(graph, prop, &graphGenerateWG, threadID)
+		go generateDirectedGraphWorker(graph, &graphGenerateWG, threadID)
 	}
 	graphGenerateWG.Wait()
 	log.verbose("Graph generation took ", time.Since(startGraphGeneration))
 	return graph
 }
 
-func generateGraphWorker(graph matrixGraph, prop properties, graphGenerateWG *sync.WaitGroup, id int) {
+func generateDirectedGraphWorker(graph matrixGraph, graphGenerateWG *sync.WaitGroup, id int) {
 	defer graphGenerateWG.Done()
 
 	startWorker := time.Now()
@@ -251,6 +270,81 @@ func generateGraphWorker(graph matrixGraph, prop properties, graphGenerateWG *sy
 		}
 	}
 	log.verbose("Graph generating worker-", id, " took ", time.Since(startWorker))
+}
+
+func readGraphFromFile() matrixGraph {
+	file, err := os.OpenFile(prop.inputFile, os.O_RDONLY, 0644)
+	if err != nil {
+		log.fatal("Cannot open file ", prop.inputFile)
+	}
+
+	reader := bufio.NewReader(file)
+	line, _ := reader.ReadString('\n')
+	file.Close()
+	vertices, err := strconv.Atoi(strings.Trim(line, "\n"))
+	if err != nil {
+		log.fatal(prop.inputFile, " has incorrect format")
+	}
+	prop.vertices = vertices
+
+	graph := allocateGraphMemory(prop.vertices)
+
+	startGraphReading := time.Now()
+	var graphReadWG sync.WaitGroup
+	for threadID := 0; threadID < prop.threads; threadID++ {
+		graphReadWG.Add(1)
+		go readGraphWorker(graph, &graphReadWG, threadID)
+	}
+	graphReadWG.Wait()
+	log.verbose("Reading graph from file took ", time.Since(startGraphReading))
+	return graph
+}
+
+func readGraphWorker(graph matrixGraph, readGraphWG *sync.WaitGroup, id int) {
+	defer readGraphWG.Done()
+
+	startWorker := time.Now()
+	log.verbose("Starting graph reading worker-", id)
+
+	firstLineLength := len(strconv.FormatInt(int64(prop.vertices), 10)) + 1
+	file, err := os.OpenFile(prop.inputFile, os.O_RDONLY, 0644)
+	if err != nil {
+		log.fatal("Failed to open ", prop.inputFile)
+	}
+	defer file.Close()
+
+	reader := bufio.NewReader(file)
+	lineLength := prop.vertices*2 + 1
+	seekLength := int64(lineLength * (prop.threads - 1))
+	workerStartingSeek := id * lineLength
+	// Seek to the starting line for this worker
+	file.Seek(int64(firstLineLength), 0)
+	file.Seek(int64(workerStartingSeek), 1)
+
+	for row := id; row < prop.vertices; row += prop.threads {
+		line, err := reader.ReadBytes('\n')
+		if err != nil || len(line) != lineLength {
+			log.fatal(prop.inputFile, " has incorrect format")
+		}
+		// Parse line
+		for k := 0; k < prop.vertices; k++ {
+			graph[row][k] = int(line[2*k]) == '1'
+		}
+		// Seek to the next line to be parsed by this worker
+		reader.Discard(int(seekLength))
+	}
+
+	log.verbose("Graph reading worker-", id, " took ", time.Since(startWorker))
+}
+
+func allocateGraphMemory(vertices int) matrixGraph {
+	startMemoryAllocation := time.Now()
+	graph := make([][]bool, prop.vertices)
+	for row := 0; row < cap(graph); row++ {
+		graph[row] = make([]bool, prop.vertices)
+	}
+	log.verbose("Memory alocation took ", time.Since(startMemoryAllocation))
+	return graph
 }
 
 func initProperties() properties {

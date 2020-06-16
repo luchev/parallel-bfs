@@ -51,7 +51,8 @@ func main() {
 		saveTraversalParentArray(parentFunction)
 	} else if prop.inputFile != "" {
 		graph := readGraphFromFile()
-		saveGraph(graph)
+		parentFunction := parallelTraversal(graph)
+		saveTraversalParentArray(parentFunction)
 	} else {
 		flag.PrintDefaults()
 	}

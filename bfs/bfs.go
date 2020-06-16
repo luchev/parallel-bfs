@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"container/list"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -17,20 +16,6 @@ import (
 	"sync"
 	"time"
 )
-
-/* Queue
-queue := make([]int, 0)
-// Push to the queue
-queue = append(queue, 1)
-// Top (just get next element, don't remove it)
-x = queue[0]
-// Discard top element
-queue = queue[1:]
-// Is empty ?
-if len(queue) == 0 {
-    fmt.Println("Queue is empty !")
-}
-*/
 
 var log logger
 var prop properties
@@ -120,16 +105,17 @@ func bfsSerial(graph matrixGraph) (parent []int) {
 }
 
 func bfsSerialFromNode(graph matrixGraph, parent []int, visited []bool, start int) {
-	queue := list.New()
-	queue.PushBack(start)
+	queue := make([]int, 0)
+	queue = append(queue, start)
+
 	vertices := len(graph)
-	for queue.Len() != 0 {
-		currentVertex := queue.Front().Value.(int)
-		queue.Remove(queue.Front())
+	for len(queue) != 0 {
+		currentVertex := queue[0]
+		queue = queue[1:]
 		for i := 0; i < vertices; i++ {
 			if graph[currentVertex][i] {
 				if !visited[i] {
-					queue.PushBack(i)
+					queue = append(queue, i)
 					visited[i] = true
 					parent[i] = currentVertex
 				}

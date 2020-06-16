@@ -23,15 +23,14 @@ var computeTime time.Duration
 
 func main() {
 	startProgram := time.Now()
-
 	prop = initProperties()
 
 	if prop.generate {
 		var graph = generateDirectedGraph()
-		saveGraph(graph)
+		saveGraphParallel(graph)
 	} else if prop.vertices != 0 {
 		var graph = generateDirectedGraph()
-		saveGraph(graph)
+		saveGraphParallel(graph)
 		parentFunction := parallelTraversal(graph)
 		saveTraversalParentArray(parentFunction)
 	} else if prop.inputFile != "" {
@@ -72,7 +71,67 @@ func saveTraversalParentArray(parent []int) {
 	}
 }
 
-func saveGraph(graph matrixGraph) {
+func saveGraphParallel(graph matrixGraph) {
+	fileName := prop.outputFile + ".graph"
+
+	startFileSavingTime := time.Now()
+	file, err := os.OpenFile(fileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+
+	if err != nil {
+		log.fatal("Failed to open ", fileName)
+	}
+	defer file.Close()
+
+	graphBytes := make([][]byte, prop.vertices)
+
+	rowJobs := make(chan int, prop.vertices)
+	readyRowsChannel := make(chan int, prop.vertices)
+
+	for workerID := 0; workerID < prop.threads; workerID++ {
+		go graphSerializerWorker(graph, graphBytes, workerID, rowJobs, readyRowsChannel)
+	}
+
+	file.WriteString(strconv.Itoa(prop.vertices) + "\n")
+
+	for row := 0; row < prop.vertices; row++ {
+		rowJobs <- row
+	}
+	close(rowJobs)
+
+	readyRows := make([]bool, prop.vertices)
+	nextRowToWrite := 0
+	for i := 0; i < prop.vertices; i++ {
+		readyRows[<-readyRowsChannel] = true
+		for ; nextRowToWrite < prop.vertices && readyRows[nextRowToWrite]; nextRowToWrite++ {
+			file.Write(graphBytes[nextRowToWrite])
+			graphBytes[nextRowToWrite] = nil
+		}
+	}
+
+	log.info("Graph saved as ", fileName)
+	log.verbose("Serializing graph to disk took ", time.Since(startFileSavingTime))
+}
+
+func graphSerializerWorker(graph matrixGraph, outputBytes [][]byte, id int, rowJobs <-chan int, readyRows chan<- int) {
+	startGraphSerializerWorkerTime := time.Now()
+	for row := range rowJobs {
+		var buffer bytes.Buffer
+		for col := 0; col < len(graph[row]); col++ {
+			if graph[row][col] {
+				buffer.WriteByte('1')
+			} else {
+				buffer.WriteByte('0')
+			}
+			buffer.WriteByte(' ')
+		}
+		buffer.WriteByte('\n')
+		outputBytes[row] = buffer.Bytes()
+		readyRows <- row
+	}
+	log.verbose("Graph serializer worker-", id, " took ", time.Since(startGraphSerializerWorkerTime))
+}
+
+func saveGraphSerial(graph matrixGraph) {
 	fileName := prop.outputFile + ".graph"
 	graphBytes := graph.Bytes()
 
@@ -211,8 +270,8 @@ func (graph matrixGraph) Bytes() []byte {
 	vertices := len(graph)
 
 	buffer.WriteString(fmt.Sprintf("%d\n", vertices))
-	for row := 0; row < len(graph); row++ {
-		for col := 0; col < len(graph[row]); col++ {
+	for row := 0; row < vertices; row++ {
+		for col := 0; col < vertices; col++ {
 			if graph[row][col] {
 				buffer.WriteByte('1')
 			} else {
@@ -223,7 +282,7 @@ func (graph matrixGraph) Bytes() []byte {
 		buffer.WriteByte('\n')
 	}
 
-	log.verbose("Converting graph to bytes took ", time.Since(startConvertingGraphToBytes))
+	log.verbose("Serializing graph to bytes took ", time.Since(startConvertingGraphToBytes))
 	return buffer.Bytes()
 }
 
@@ -342,7 +401,7 @@ func initProperties() properties {
 	flag.BoolVar(&prop.quiet, "q", false, "Run quietly")
 	flag.BoolVar(&prop.generate, "g", false, "Generate graph only")
 	flag.StringVar(&prop.inputFile, "i", "", "Read graph from file")
-	flag.StringVar(&prop.outputFile, "o", "graph.out", "Output file")
+	flag.StringVar(&prop.outputFile, "o", "out", "Output file")
 
 	flag.Parse()
 

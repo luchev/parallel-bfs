@@ -26,7 +26,8 @@ func main() {
 	prop = initProperties()
 
 	if prop.generate {
-		var graph = generateDirectedGraph()
+		var graph = generateUndirectedGraph()
+		// var graph = generateDirectedGraph()
 		saveGraphParallel(graph)
 	} else if prop.vertices != 0 {
 		var graph = generateDirectedGraph()
@@ -62,7 +63,10 @@ type properties struct {
 }
 
 func bfsLevelBarrier(graph matrixGraph) (parent []int) {
+	log.verbose("Starting parallel BFS with level barrier using ", prop.threads, " threads")
 	startBFS := time.Now()
+	threadTimes := make([]time.Duration, prop.threads)
+
 	parent = make([]int, prop.vertices)
 	for i := range parent {
 		parent[i] = -1
@@ -70,15 +74,19 @@ func bfsLevelBarrier(graph matrixGraph) (parent []int) {
 	visited := make([]bool, prop.vertices)
 	for index, isVisited := range visited {
 		if !isVisited {
-			bfsLevelBarrierFromVertex(graph, parent, visited, index)
+			bfsLevelBarrierFromVertex(graph, parent, visited, index, threadTimes)
 		}
 	}
 
-	log.verbose("BFS level barrier using ", prop.threads, " threads took ", time.Since(startBFS))
+	for workerID, duration := range threadTimes {
+		log.verbose("Parallel BFS worker-", workerID, " took ", duration)
+	}
+
+	log.verbose("Parallel BFS with level barrier using ", prop.threads, " threads took ", time.Since(startBFS))
 	return parent
 }
 
-func bfsLevelBarrierFromVertex(graph matrixGraph, parent []int, visited []bool, start int) {
+func bfsLevelBarrierFromVertex(graph matrixGraph, parent []int, visited []bool, start int, threadTimes []time.Duration) {
 	// Stores next level from the queue
 	futureFrontiers := make([]int, 0)
 	futureFrontiers = append(futureFrontiers, start)
@@ -89,17 +97,17 @@ func bfsLevelBarrierFromVertex(graph matrixGraph, parent []int, visited []bool, 
 		currentFrontiers := make(chan int, prop.vertices)
 		nextLevelFrontiers := make(chan int, prop.vertices)
 
+		// Start parallel level traversal workers
+		for i := 0; i < prop.threads; i++ {
+			go bfsLevelBarrierWorker(graph, parent, visited, currentFrontiers, nextLevelFrontiers, addedNeighbours, i, threadTimes)
+		}
+
 		// Initialize queue for vertices from current level
 		for _, node := range futureFrontiers {
 			currentFrontiers <- node
 		}
 		close(currentFrontiers)
 		futureFrontiers = make([]int, 0)
-
-		// Start parallel level traversal workers
-		for i := 0; i < prop.threads; i++ {
-			go bfsLevelBarrierWorker(graph, parent, visited, currentFrontiers, nextLevelFrontiers, addedNeighbours)
-		}
 
 		// Wait all workers to finish and generate vertices for the next level
 		threadsReady := 0
@@ -119,7 +127,8 @@ func bfsLevelBarrierFromVertex(graph matrixGraph, parent []int, visited []bool, 
 	}
 }
 
-func bfsLevelBarrierWorker(graph matrixGraph, parent []int, visited []bool, currentFrontiers <-chan int, nextLevelFrontiers chan<- int, addedNeighbours []bool) {
+func bfsLevelBarrierWorker(graph matrixGraph, parent []int, visited []bool, currentFrontiers <-chan int, nextLevelFrontiers chan<- int, addedNeighbours []bool, workerID int, threadTimes []time.Duration) {
+	startWorkerTime := time.Now()
 	for vertex := range currentFrontiers {
 		if visited[vertex] {
 			continue
@@ -133,26 +142,29 @@ func bfsLevelBarrierWorker(graph matrixGraph, parent []int, visited []bool, curr
 			}
 		}
 	}
-
+	threadTimes[workerID] += time.Since(startWorkerTime)
 	nextLevelFrontiers <- -1
 }
 
 func saveTraversalParentArray(parent []int) {
-	file, err := os.OpenFile(prop.outputFile+".parent", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	fileName := prop.outputFile + ".parent"
+	file, err := os.OpenFile(fileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	defer file.Close()
 	if err != nil {
-		log.err("Failed to save graph traversal result in ", prop.outputFile)
+		log.err("Failed to save graph traversal result in ", fileName)
 		return
 	}
 	for start, end := range parent {
 		file.WriteString(fmt.Sprint(start, end, "\n"))
 	}
+	log.info("Graph traversal result saved as ", fileName)
 }
 
 func saveGraphParallel(graph matrixGraph) {
-	fileName := prop.outputFile + ".graph"
-
+	log.verbose("Starting serializing graph to disk using ", prop.threads, " threads")
 	startFileSavingTime := time.Now()
+
+	fileName := prop.outputFile + ".graph"
 	file, err := os.OpenFile(fileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 
 	if err != nil {
@@ -184,11 +196,13 @@ func saveGraphParallel(graph matrixGraph) {
 	}
 
 	log.info("Graph saved as ", fileName)
-	log.verbose("Serializing graph to disk took ", time.Since(startFileSavingTime))
+	log.verbose("Serializing graph to disk using ", prop.threads, " threads took ", time.Since(startFileSavingTime))
 }
 
 func graphSerializerWorker(graph matrixGraph, outputBytes [][]byte, id int, rowJobs <-chan int, readyRows chan<- int) {
+	log.verbose("Starting graph serializing worker-", id)
 	startGraphSerializerWorkerTime := time.Now()
+
 	for row := range rowJobs {
 		var buffer bytes.Buffer
 		for col := 0; col < len(graph[row]); col++ {
@@ -203,16 +217,18 @@ func graphSerializerWorker(graph matrixGraph, outputBytes [][]byte, id int, rowJ
 		outputBytes[row] = buffer.Bytes()
 		readyRows <- row
 	}
-	log.verbose("Graph serializer worker-", id, " took ", time.Since(startGraphSerializerWorkerTime))
+
+	log.verbose("Graph serializing worker-", id, " took ", time.Since(startGraphSerializerWorkerTime))
 }
 
 func saveGraphSerial(graph matrixGraph) {
+	log.info("Starting serializing graph to disk")
+	startFileSavingTime := time.Now()
+
 	fileName := prop.outputFile + ".graph"
 	graphBytes := graph.Bytes()
 
-	startFileSavingTime := time.Now()
 	err := ioutil.WriteFile(fileName, graphBytes, 0644)
-
 	if err == nil {
 		log.info("Graph saved as ", fileName)
 		log.verbose("Writing graph to disk took ", time.Since(startFileSavingTime))
@@ -222,11 +238,14 @@ func saveGraphSerial(graph matrixGraph) {
 }
 
 func bfsSerial(graph matrixGraph) (parent []int) {
+	log.verbose("Starting serial BFS")
 	startBFS := time.Now()
+
 	parent = make([]int, prop.vertices)
 	for i := range parent {
 		parent[i] = -1
 	}
+
 	visited := make([]bool, prop.vertices)
 	for index, isVisited := range visited {
 		if !isVisited {
@@ -234,7 +253,7 @@ func bfsSerial(graph matrixGraph) (parent []int) {
 		}
 	}
 
-	log.verbose("Serial BFS using 1 thread took ", time.Since(startBFS))
+	log.verbose("Serial BFS took ", time.Since(startBFS))
 	return parent
 }
 
@@ -247,18 +266,17 @@ func bfsSerialFromVertex(graph matrixGraph, parent []int, visited []bool, start 
 		currentVertex := queue[0]
 		queue = queue[1:]
 		for i := 0; i < vertices; i++ {
-			if graph[currentVertex][i] {
-				if !visited[i] {
-					queue = append(queue, i)
-					visited[i] = true
-					parent[i] = currentVertex
-				}
+			if graph[currentVertex][i] && !visited[i] {
+				queue = append(queue, i)
+				visited[i] = true
+				parent[i] = currentVertex
 			}
 		}
 	}
 }
 
 func parallelTraversal(graph matrixGraph) (parent []int) {
+	log.verbose("Starting custom parallel traversal using ", prop.threads, " threads")
 	startBFS := time.Now()
 
 	visited := make([]bool, prop.vertices)
@@ -274,15 +292,14 @@ func parallelTraversal(graph matrixGraph) (parent []int) {
 	}
 	bfsWG.Wait()
 
-	log.verbose("Parallel BFS using ", prop.threads, " threads took ", time.Since(startBFS))
+	log.verbose("Custom parallel traversal using ", prop.threads, " threads took ", time.Since(startBFS))
 	return parent
 }
 
 func parallelTraversalWorker(graph matrixGraph, bfsWG *sync.WaitGroup, id int, parent []int, visited []bool) {
 	defer bfsWG.Done()
-
+	log.verbose("Starting custom parallel traversal worker-", id)
 	startWorker := time.Now()
-	log.verbose("Starting graph traversal worker-", id)
 
 	for currentVertex := id; currentVertex < prop.vertices; currentVertex += prop.threads {
 		for i := 0; i < prop.vertices; i++ {
@@ -294,7 +311,8 @@ func parallelTraversalWorker(graph matrixGraph, bfsWG *sync.WaitGroup, id int, p
 			}
 		}
 	}
-	log.verbose("Graph traversal worker-", id, " took ", time.Since(startWorker))
+
+	log.verbose("Custom parallel traversal worker-", id, " took ", time.Since(startWorker))
 }
 
 func (t *logger) info(args ...interface{}) {
@@ -339,6 +357,7 @@ func (graph matrixGraph) String() string {
 
 // Bytes converts a graph to a byte array suitable to be written to a file
 func (graph matrixGraph) Bytes() []byte {
+	log.verbose("Starting serializing graph to bytes")
 	startConvertingGraphToBytes := time.Now()
 
 	buffer := bytes.Buffer{}
@@ -362,24 +381,25 @@ func (graph matrixGraph) Bytes() []byte {
 }
 
 func generateDirectedGraph() matrixGraph {
+	log.verbose("Starting generating directed graph using ", prop.threads, " threads")
+	startGraphGeneration := time.Now()
 	graph := allocateGraphMemory(prop.vertices)
 
-	startGraphGeneration := time.Now()
 	var graphGenerateWG sync.WaitGroup
 	for threadID := 0; threadID < prop.threads; threadID++ {
 		graphGenerateWG.Add(1)
 		go generateDirectedGraphWorker(graph, &graphGenerateWG, threadID)
 	}
 	graphGenerateWG.Wait()
-	log.verbose("Graph generation took ", time.Since(startGraphGeneration))
+
+	log.verbose("Generating directed graph using ", prop.threads, " took ", time.Since(startGraphGeneration))
 	return graph
 }
 
 func generateDirectedGraphWorker(graph matrixGraph, graphGenerateWG *sync.WaitGroup, id int) {
 	defer graphGenerateWG.Done()
-
+	log.verbose("Starting directed graph generating worker-", id)
 	startWorker := time.Now()
-	log.verbose("Starting graph generating worker-", id)
 
 	source := rand.NewSource(time.Now().UnixNano())
 	generator := rand.New(source)
@@ -390,10 +410,54 @@ func generateDirectedGraphWorker(graph matrixGraph, graphGenerateWG *sync.WaitGr
 			graph[row][k] = int(b[k]) < prop.density
 		}
 	}
-	log.verbose("Graph generating worker-", id, " took ", time.Since(startWorker))
+	log.verbose("Generating directed graph worker-", id, " took ", time.Since(startWorker))
+}
+
+func generateUndirectedGraph() (graph matrixGraph) {
+	log.verbose("Starting generating undirected graph using ", prop.threads)
+	graph = allocateGraphMemory(prop.vertices)
+	startGraphGeneration := time.Now()
+
+	tasks := make(chan int, prop.vertices)
+	var graphGenerateWG sync.WaitGroup
+	for i := 0; i < prop.threads; i++ {
+		graphGenerateWG.Add(1)
+		go generateUnirectedGraphWorker(graph, &graphGenerateWG, tasks, i)
+	}
+
+	for vertex := 0; vertex < prop.vertices; vertex++ {
+		tasks <- vertex
+	}
+	close(tasks)
+
+	graphGenerateWG.Wait()
+	log.verbose("Generating undirected graph using ", prop.threads, "threads took ", time.Since(startGraphGeneration))
+	return graph
+}
+
+func generateUnirectedGraphWorker(graph matrixGraph, graphGenerateWG *sync.WaitGroup, tasks <-chan int, id int) {
+	defer graphGenerateWG.Done()
+	log.verbose("Starting undirected graph generating worker-", id)
+	startWorker := time.Now()
+
+	source := rand.NewSource(time.Now().UnixNano())
+	generator := rand.New(source)
+	for vertex := range tasks {
+		var randomBytes []byte = make([]byte, prop.vertices-vertex-1)
+		generator.Read(randomBytes)
+		graph[vertex][vertex] = true
+		for k := vertex + 1; k < prop.vertices; k++ {
+			graph[vertex][k] = int(randomBytes[k-vertex-1]) < prop.density
+			graph[k][vertex] = int(randomBytes[k-vertex-1]) < prop.density
+		}
+	}
+	log.verbose("Generating undirected graph worker-", id, " took ", time.Since(startWorker))
 }
 
 func readGraphFromFile() matrixGraph {
+	log.verbose("Starting reading graph from file using ", prop.threads, " threads")
+	startGraphReading := time.Now()
+
 	file, err := os.OpenFile(prop.inputFile, os.O_RDONLY, 0644)
 	if err != nil {
 		log.fatal("Cannot open file ", prop.inputFile)
@@ -406,26 +470,25 @@ func readGraphFromFile() matrixGraph {
 	if err != nil {
 		log.fatal(prop.inputFile, " has incorrect format")
 	}
-	prop.vertices = vertices
 
+	prop.vertices = vertices
 	graph := allocateGraphMemory(prop.vertices)
 
-	startGraphReading := time.Now()
 	var graphReadWG sync.WaitGroup
 	for threadID := 0; threadID < prop.threads; threadID++ {
 		graphReadWG.Add(1)
 		go readGraphWorker(graph, &graphReadWG, threadID)
 	}
 	graphReadWG.Wait()
-	log.verbose("Reading graph from file took ", time.Since(startGraphReading))
+
+	log.verbose("Reading graph from file using ", prop.threads, " threads took ", time.Since(startGraphReading))
 	return graph
 }
 
 func readGraphWorker(graph matrixGraph, readGraphWG *sync.WaitGroup, id int) {
 	defer readGraphWG.Done()
-
-	startWorker := time.Now()
 	log.verbose("Starting graph reading worker-", id)
+	startWorker := time.Now()
 
 	firstLineLength := len(strconv.FormatInt(int64(prop.vertices), 10)) + 1
 	file, err := os.OpenFile(prop.inputFile, os.O_RDONLY, 0644)
@@ -438,6 +501,7 @@ func readGraphWorker(graph matrixGraph, readGraphWG *sync.WaitGroup, id int) {
 	lineLength := prop.vertices*2 + 1
 	seekLength := int64(lineLength * (prop.threads - 1))
 	workerStartingSeek := id * lineLength
+
 	// Seek to the starting line for this worker
 	file.Seek(int64(firstLineLength), 0)
 	file.Seek(int64(workerStartingSeek), 1)
@@ -459,11 +523,14 @@ func readGraphWorker(graph matrixGraph, readGraphWG *sync.WaitGroup, id int) {
 }
 
 func allocateGraphMemory(vertices int) matrixGraph {
+	log.verbose("Starting allocating memory for graph with ", prop.vertices, " vertices")
 	startMemoryAllocation := time.Now()
+
 	graph := make([][]bool, prop.vertices)
 	for row := 0; row < cap(graph); row++ {
 		graph[row] = make([]bool, prop.vertices)
 	}
+
 	log.verbose("Memory alocation took ", time.Since(startMemoryAllocation))
 	return graph
 }

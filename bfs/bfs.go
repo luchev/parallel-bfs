@@ -35,7 +35,9 @@ func main() {
 		saveTraversalParentArray(parentFunction)
 	} else if prop.inputFile != "" {
 		graph := readGraphFromFile()
-		parentFunction := parallelTraversal(graph)
+		parentFunction := bfsLevelBarrier(graph)
+		// parentFunction := bfsSerial(graph)
+		// parentFunction := parallelTraversal(graph)
 		saveTraversalParentArray(parentFunction)
 	} else {
 		flag.PrintDefaults()
@@ -57,6 +59,82 @@ type properties struct {
 	generate   bool
 	inputFile  string
 	outputFile string
+}
+
+func bfsLevelBarrier(graph matrixGraph) (parent []int) {
+	startBFS := time.Now()
+	parent = make([]int, prop.vertices)
+	for i := range parent {
+		parent[i] = -1
+	}
+	visited := make([]bool, prop.vertices)
+	for index, isVisited := range visited {
+		if !isVisited {
+			bfsLevelBarrierFromVertex(graph, parent, visited, index)
+		}
+	}
+
+	log.verbose("BFS level barrier using ", prop.threads, " threads took ", time.Since(startBFS))
+	return parent
+}
+
+func bfsLevelBarrierFromVertex(graph matrixGraph, parent []int, visited []bool, start int) {
+	// Stores next level from the queue
+	futureFrontiers := make([]int, 0)
+	futureFrontiers = append(futureFrontiers, start)
+	addedNeighbours := make([]bool, prop.vertices)
+
+	for len(futureFrontiers) != 0 {
+		// Make channels for communication
+		currentFrontiers := make(chan int, prop.vertices)
+		nextLevelFrontiers := make(chan int, prop.vertices)
+
+		// Initialize queue for vertices from current level
+		for _, node := range futureFrontiers {
+			currentFrontiers <- node
+		}
+		close(currentFrontiers)
+		futureFrontiers = make([]int, 0)
+
+		// Start parallel level traversal workers
+		for i := 0; i < prop.threads; i++ {
+			go bfsLevelBarrierWorker(graph, parent, visited, currentFrontiers, nextLevelFrontiers, addedNeighbours)
+		}
+
+		// Wait all workers to finish and generate vertices for the next level
+		threadsReady := 0
+		for vertex := range nextLevelFrontiers {
+			if vertex == -1 { // -1 is sent by a thread when it's ready
+				threadsReady++
+			} else {
+				futureFrontiers = append(futureFrontiers, vertex)
+			}
+
+			// If all threads have sent the ready signal (-1)
+			if threadsReady == prop.threads {
+				close(nextLevelFrontiers)
+				break
+			}
+		}
+	}
+}
+
+func bfsLevelBarrierWorker(graph matrixGraph, parent []int, visited []bool, currentFrontiers <-chan int, nextLevelFrontiers chan<- int, addedNeighbours []bool) {
+	for vertex := range currentFrontiers {
+		if visited[vertex] {
+			continue
+		}
+		visited[vertex] = true
+		for neighbour := 0; neighbour < prop.vertices; neighbour++ {
+			if !visited[neighbour] && graph[vertex][neighbour] && !addedNeighbours[neighbour] {
+				addedNeighbours[neighbour] = true
+				parent[neighbour] = vertex
+				nextLevelFrontiers <- neighbour
+			}
+		}
+	}
+
+	nextLevelFrontiers <- -1
 }
 
 func saveTraversalParentArray(parent []int) {
@@ -83,16 +161,13 @@ func saveGraphParallel(graph matrixGraph) {
 	defer file.Close()
 
 	graphBytes := make([][]byte, prop.vertices)
-
 	rowJobs := make(chan int, prop.vertices)
 	readyRowsChannel := make(chan int, prop.vertices)
-
 	for workerID := 0; workerID < prop.threads; workerID++ {
 		go graphSerializerWorker(graph, graphBytes, workerID, rowJobs, readyRowsChannel)
 	}
 
 	file.WriteString(strconv.Itoa(prop.vertices) + "\n")
-
 	for row := 0; row < prop.vertices; row++ {
 		rowJobs <- row
 	}
@@ -155,7 +230,7 @@ func bfsSerial(graph matrixGraph) (parent []int) {
 	visited := make([]bool, prop.vertices)
 	for index, isVisited := range visited {
 		if !isVisited {
-			bfsSerialFromNode(graph, parent, visited, index)
+			bfsSerialFromVertex(graph, parent, visited, index)
 		}
 	}
 
@@ -163,7 +238,7 @@ func bfsSerial(graph matrixGraph) (parent []int) {
 	return parent
 }
 
-func bfsSerialFromNode(graph matrixGraph, parent []int, visited []bool, start int) {
+func bfsSerialFromVertex(graph matrixGraph, parent []int, visited []bool, start int) {
 	queue := make([]int, 0)
 	queue = append(queue, start)
 

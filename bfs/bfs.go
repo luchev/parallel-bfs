@@ -25,25 +25,33 @@ func main() {
 	startProgram := time.Now()
 	prop = initProperties()
 
-	if prop.generate {
-		var graph = generateUndirectedGraph()
-		// var graph = generateDirectedGraph()
-		saveGraphParallel(graph)
-	} else if prop.vertices != 0 {
-		var graph = generateDirectedGraph()
-		saveGraphParallel(graph)
-		parentFunction := parallelTraversal(graph)
-		saveTraversalParentArray(parentFunction)
+	// Create graph
+	var graph matrixGraph
+	if prop.generate || prop.vertices != 0 {
+		if prop.directed {
+			graph = generateDirectedGraph()
+		} else {
+			graph = generateUndirectedGraph()
+		}
+		log.info(len(graph))
+		// saveGraphSerial(graph)
+		// saveGraphParallel(graph)
 	} else if prop.inputFile != "" {
-		graph := readGraphFromFile()
-		parentFunction := bfsLevelBarrier(graph)
-		// parentFunction := bfsSerial(graph)
-		// parentFunction := parallelTraversal(graph)
-		saveTraversalParentArray(parentFunction)
+		graph = readGraphFromFile()
 	} else {
-		flag.PrintDefaults()
+		log.fatal("Either -v or -i should be specified")
 	}
 
+	if prop.generate {
+		os.Exit(0)
+	}
+
+	// Traversal
+	// parentFunction := bfsSerial(graph)
+	// parentFunction := bfsLevelBarrier(graph)
+	// parentFunction := parallelTraversal(graph)
+
+	// saveTraversalParentArray(parentFunction)
 	log.info("Program execution took ", time.Since(startProgram))
 }
 
@@ -58,6 +66,7 @@ type properties struct {
 	density    int
 	quiet      bool
 	generate   bool
+	directed   bool
 	inputFile  string
 	outputFile string
 }
@@ -222,7 +231,7 @@ func graphSerializerWorker(graph matrixGraph, outputBytes [][]byte, id int, rowJ
 }
 
 func saveGraphSerial(graph matrixGraph) {
-	log.info("Starting serializing graph to disk")
+	log.info("Starting writing graph to disk")
 	startFileSavingTime := time.Now()
 
 	fileName := prop.outputFile + ".graph"
@@ -334,7 +343,7 @@ func (t *logger) err(args ...interface{}) {
 func (t *logger) fatal(args ...interface{}) {
 	if t.outError == nil {
 		t.outError = golog.New(os.Stderr, "", 0)
-		t.outError.SetPrefix("[ERR] ")
+		t.outError.SetPrefix("[FATAL] ")
 	}
 	t.outError.Print(args...)
 	os.Exit(1)
@@ -381,9 +390,9 @@ func (graph matrixGraph) Bytes() []byte {
 }
 
 func generateDirectedGraph() matrixGraph {
+	graph := allocateGraphMemory(prop.vertices)
 	log.verbose("Starting generating directed graph using ", prop.threads, " threads")
 	startGraphGeneration := time.Now()
-	graph := allocateGraphMemory(prop.vertices)
 
 	var graphGenerateWG sync.WaitGroup
 	for threadID := 0; threadID < prop.threads; threadID++ {
@@ -392,7 +401,7 @@ func generateDirectedGraph() matrixGraph {
 	}
 	graphGenerateWG.Wait()
 
-	log.verbose("Generating directed graph using ", prop.threads, " took ", time.Since(startGraphGeneration))
+	log.verbose("Generating directed graph using ", prop.threads, " threads took ", time.Since(startGraphGeneration))
 	return graph
 }
 
@@ -414,8 +423,8 @@ func generateDirectedGraphWorker(graph matrixGraph, graphGenerateWG *sync.WaitGr
 }
 
 func generateUndirectedGraph() (graph matrixGraph) {
-	log.verbose("Starting generating undirected graph using ", prop.threads)
 	graph = allocateGraphMemory(prop.vertices)
+	log.verbose("Starting generating undirected graph using ", prop.threads)
 	startGraphGeneration := time.Now()
 
 	tasks := make(chan int, prop.vertices)
@@ -431,7 +440,7 @@ func generateUndirectedGraph() (graph matrixGraph) {
 	close(tasks)
 
 	graphGenerateWG.Wait()
-	log.verbose("Generating undirected graph using ", prop.threads, "threads took ", time.Since(startGraphGeneration))
+	log.verbose("Generating undirected graph using ", prop.threads, " threads took ", time.Since(startGraphGeneration))
 	return graph
 }
 
@@ -541,6 +550,7 @@ func initProperties() properties {
 	threads := flag.Uint("t", 0, "Threads (0 to use all cpu cores)")
 	density := flag.Uint("d", 20, "Graph density in percent (0-100)")
 	flag.BoolVar(&prop.quiet, "q", false, "Run quietly")
+	flag.BoolVar(&prop.directed, "directed", false, "Generate directed graph (default is undirected)")
 	flag.BoolVar(&prop.generate, "g", false, "Generate graph only")
 	flag.StringVar(&prop.inputFile, "i", "", "Read graph from file")
 	flag.StringVar(&prop.outputFile, "o", "out", "Output file")

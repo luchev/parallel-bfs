@@ -74,9 +74,9 @@ func main() {
 	var wg sync.WaitGroup
 	for i := 0; i < threads; i++ {
 		wg.Add(1)
-		// go generateCrypto(&wg, i, threads)
+		go generateCrypto(&wg, i, threads)
 		// go generateMath(&wg, i, threads)
-		go generateMathArray(&wg, i, threads)
+		//go generateMathArray(&wg, i, threads)
 	}
 
 	wg.Wait()

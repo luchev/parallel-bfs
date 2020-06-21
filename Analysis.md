@@ -294,9 +294,9 @@ Pseudo-random number generator (**PRNG**) генерира случайни чи
 | 30          | 557    | 538    | 545    | 538            | 19.09                             | 0.64                                  | 29.16                            | 0.97                                |
 | 32          | 586    | 566    | 1080   | 566            | 18.14                             | 0.57                                  | 27.72                            | 0.87                                |
 
-![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Breadth%20first%20traversal%20with%20Level%20Barrier%20speedup.svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test results/Diagrams/Breadth first traversal with Level Barrier speedup.svg)
+![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Breadth%20first%20traversal%20with%20Level%20Barrier%20speedup.svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Breadth%20first%20traversal%20with%20Level%20Barrier%20speedup.svg)
 
-![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Breadth%20first%20traversal%20with%20Level%20Barrier%20efficiency.svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test results/Diagrams/Breadth first traversal with Level Barrier efficiency.svg)
+![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Breadth%20first%20traversal%20with%20Level%20Barrier%20efficiency.svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Breadth%20first%20traversal%20with%20Level%20Barrier%20efficiency.svg)
 
 **Извод**
 
@@ -360,9 +360,9 @@ Breadth first traversal with Level barrier има едно тясно място
 | 30          | 668    | 627    | 626    | 626            | 19.77                             | 0.66                                  | 25.06                            | 0.84                                |
 | 32          | 722    | 679    | 705    | 679            | 18.23                             | 0.57                                  | 23.11                            | 0.72                                |
 
-![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Shallow%20traversal%20speedup.svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test results/Diagrams/Shallow traversal speedup.svg)
+![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Shallow%20traversal%20speedup.svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Shallow%20traversal%20speedup.svg)
 
-![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Shallow%20traversal%20efficiency.svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test results/Diagrams/Shallow traversal efficiency.svg)
+![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Shallow%20traversal%20efficiency.svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Shallow%20traversal%20efficiency.svg)
 
 **Извод**
 
@@ -420,9 +420,9 @@ Breadth first traversal with Level barrier има едно тясно място
 | 30      | 1608.68  | 868.82   | 1445.68 | 868.82     | 17.92   | 0.6        |
 | 32      | 966      | 966.71   | 1001.54 | 966.00     | 16.11   | 0.5        |
 
-![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Generating%20directed%20graph%20speedup.svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test results/Diagrams/Generating directed graph speedup.svg)
+![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Generating%20directed%20graph%20speedup.svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Generating%20directed%20graph%20speedup.svg)
 
-![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Generating%20directed%20graph%20efficiency.svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test results/Diagrams/Generating directed graph efficiency.svg)
+![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Generating%20directed%20graph%20efficiency.svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Generating%20directed%20graph%20efficiency.svg)
 
 **Извод**
 
@@ -478,9 +478,9 @@ Breadth first traversal with Level barrier има едно тясно място
 | 30          | 13.75  | 13.27  | 13.84  | 13.27          | 10.32       | 0.34           |
 | 32          | 13.46  | 13.26  | 13.58  | 13.26          | 10.33       | 0.32           |
 
-![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Generating%20undirected%20graph%20speedup.svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test results/Diagrams/Generating undirected graph speedup.svg)
+![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Generating%20undirected%20graph%20speedup.svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Generating%20undirected%20graph%20speedup.svg)
 
-![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Generating%20undirected%20graph%20efficiency.svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test results/Diagrams/Generating undirected graph efficiency.svg)
+![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Generating%20undirected%20graph%20efficiency.svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Generating%20undirected%20graph%20efficiency.svg)
 
 **Извод**
 
@@ -514,9 +514,9 @@ Breadth first traversal with Level barrier има едно тясно място
 | 30          | 26.14  | 27.44  | 25.8   | 25.8           | 0.55        | 0.02           |
 | 32          | 28.24  | 28.58  | 28.93  | 28.24          | 0.5         | 0.02           |
 
-![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Speedup%20of%20reading%20graph%20from%20disk%20with%2050%2C000%20vertices.svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test results/Diagrams/Speedup of reading graph from disk with 50%2C000 vertices.svg)
+![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Speedup%20of%20reading%20graph%20from%20disk%20with%2050%2C000%20vertices.svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Speedup%20of%20reading%20graph%20from%20disk%20with%2050%2C000%20vertices.svg)
 
-![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Efficiency%20of%20reading%20a%20graph%20with%20%2050%2C000%20vertices.svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test results/Diagrams/Efficiency of reading a graph with  50%2C000 vertices.svg)
+![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Efficiency%20of%20reading%20a%20graph%20with%20%2050%2C000%20vertices.svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Efficiency%20of%20reading%20a%20graph%20with%20%2050%2C000%20vertices.svg)
 
 **Извод**
 
@@ -554,9 +554,9 @@ Breadth first traversal with Level barrier има едно тясно място
 | 30          | 10.97  | 11.21  | 12.12  | 10.97          | 5.81                              | 0.19                                  | 10.08                            | 0.34                                |
 | 32          | 10.31  | 11.43  | 11     | 10.31          | 6.19                              | 0.19                                  | 10.72                            | 0.34                                |
 
-![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Writing%20graph%20to%20disk%20Speedup%20(compared%20to%20serial)%20vs.%20Speedup(compared%20to%20parallel).svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test results/Diagrams/Writing graph to disk Speedup (compared to serial) vs. Speedup(compared to parallel).svg)
+![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Writing%20graph%20to%20disk%20Speedup%20(compared%20to%20serial)%20vs.%20Speedup(compared%20to%20parallel).svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Writing%20graph%20to%20disk%20Speedup%20(compared%20to%20serial)%20vs.%20Speedup(compared%20to%20parallel).svg)
 
-![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Writing%20graph%20to%20disk%20Efficiency%20(compared%20to%20serial)%20vs.%20Efficiency%20(compared%20to%20parallel).svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test results/Diagrams/Writing graph to disk Efficiency (compared to serial) vs. Efficiency (compared to parallel).svg)
+![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Writing%20graph%20to%20disk%20Efficiency%20(compared%20to%20serial)%20vs.%20Efficiency%20(compared%20to%20parallel).svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Writing%20graph%20to%20disk%20Efficiency%20(compared%20to%20serial)%20vs.%20Efficiency%20(compared%20to%20parallel).svg)
 
 **Извод**
 

@@ -18,11 +18,11 @@
 
 **Вариант 1: Генериране на граф**, обхождане на графа и записване на резултата и графа във файлове.
 
-![](https://i.imgur.com/YJsk1vi.png)
+![https://i.imgur.com/YJsk1vi.png](https://i.imgur.com/YJsk1vi.png)
 
 **Вариант 2: Прочитане на граф от файл**, обхождане на графа и записване на резултата във файл.
 
-![](https://i.imgur.com/NbUqhbc.png)
+![https://i.imgur.com/NbUqhbc.png](https://i.imgur.com/NbUqhbc.png)
 
 ### Декомпозиция на проблема
 
@@ -52,11 +52,11 @@
 
 ### Многонишкова архитектура на Вариант 1: Генериране на граф
 
-![](https://i.imgur.com/vYBb7yT.png)
+![https://i.imgur.com/vYBb7yT.png](https://i.imgur.com/vYBb7yT.png)
 
 ### Многонишкова архитектура на Вариант 2: Прочитане на граф от файл
 
-![](https://i.imgur.com/H6KShGA.png)
+![https://i.imgur.com/H6KShGA.png](https://i.imgur.com/H6KShGA.png)
 
 ## Архитектура на отделните Операции
 

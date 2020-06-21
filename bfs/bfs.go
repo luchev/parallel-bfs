@@ -33,9 +33,8 @@ func main() {
 		} else {
 			graph = generateUndirectedGraph()
 		}
-		log.info(len(graph))
-		// saveGraphSerial(graph)
-		// saveGraphParallel(graph)
+		saveGraphSerial(graph)
+		saveGraphParallel(graph)
 	} else if prop.inputFile != "" {
 		graph = readGraphFromFile()
 	} else {
@@ -47,11 +46,11 @@ func main() {
 	}
 
 	// Traversal
-	// parentFunction := bfsSerial(graph)
-	// parentFunction := bfsLevelBarrier(graph)
-	// parentFunction := parallelTraversal(graph)
+	parentFunction := bfsSerial(graph)
+	parentFunction = bfsLevelBarrier(graph)
+	parentFunction = parallelTraversal(graph)
 
-	// saveTraversalParentArray(parentFunction)
+	saveTraversalParentArray(parentFunction)
 	log.info("Program execution took ", time.Since(startProgram))
 }
 
@@ -231,7 +230,7 @@ func graphSerializerWorker(graph matrixGraph, outputBytes [][]byte, id int, rowJ
 }
 
 func saveGraphSerial(graph matrixGraph) {
-	log.info("Starting writing graph to disk")
+	log.verbose("Starting serializing graph to disk")
 	startFileSavingTime := time.Now()
 
 	fileName := prop.outputFile + ".graph"
@@ -240,7 +239,7 @@ func saveGraphSerial(graph matrixGraph) {
 	err := ioutil.WriteFile(fileName, graphBytes, 0644)
 	if err == nil {
 		log.info("Graph saved as ", fileName)
-		log.verbose("Writing graph to disk took ", time.Since(startFileSavingTime))
+		log.verbose("Serializing graph to disk took ", time.Since(startFileSavingTime))
 	} else {
 		log.err("Cannot save graph as ", fileName)
 	}

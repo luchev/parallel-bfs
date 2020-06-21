@@ -218,7 +218,7 @@ Pseudo-random number generator (**PRNG**) генерира случайни чи
 | **Go PRNG Sequence**       | 1     | 3.67  | 6.84  | 11.29  | 12.9   |
 | **Linear speedup**         | 1     | 4     | 8     | 16     | 20.8   |
 
-![](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test results/Diagrams/Programming language comparison.svg)
+![https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Programming%20language%20comparison.svg](https://raw.githubusercontent.com/luchev/parallel-bfs/master/Test%20results/Diagrams/Programming%20language%20comparison.svg)
 
 Най-добро ускорение на 32 нишки получаваме при Go - 15.86x (PRNG), като C++ (Mersenne Twister) е на второ място с 15.67x. Java е на последно място с 5.23x ускорение на 32 нишки.
 

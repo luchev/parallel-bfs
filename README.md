@@ -1,6 +1,6 @@
 # Parallel Breadth First Traversal using Go
 
-Implementation of a parallel BFS with level barrier using Go.
+Implementation of a parallel BFS with level barrier using Go. The algorithm outputs the parent function of the resulting spanning tree.
 
 ## Usage
 

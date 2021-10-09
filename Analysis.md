@@ -1,84 +1,78 @@
-# Паралелно обхождане на граф
+# Parallel graph traversal
 
-**Иван Лучев**
+In this document we will take a look at graph traversal algorithms, which generate a spanning tree/forest. How to parallelize those algorithms and how much performance can we gain by doing so. The main interest of this project is to see how well different algorithms scale with the number of cores and the number of vertices/edges of the graph.
 
-Кодът използван в този документ може да бъде достъпен на [github.com/luchev](https://github.com/luchev/parallel-bfs)
+We will mostly be looking at dense graphs. The graphs will be represented by an adjacency matrix, for simplicity of operations.
 
-Резултатите от тестовете и диаграмите могат да бъдат достъпени в [github](https://github.com/luchev/parallel-bfs/blob/master/Test%20results/Test%20results.ods) или [google sheets](https://docs.google.com/spreadsheets/d/1g35b4akc_eEge8l8X3_Mr2DjYDiWfeV_n2L-7-FsYCk/edit?usp=sharing)
+## Problem description
 
-[TOC]
+We will look at 2 versions of the problem:
 
-В този документ ще разгледаме обхождане на граф $G(V,E)$ като крайната цел е да получим ефективен алгоритъм, който ни връща като резултат как изглежда функцията на бащите $p(v)$ за някое от покриващите дървета на този граф. Ще разгледаме няколко паралелни алгоритъма, какво ускорение ни предлагат пред последователните обхождания и колко добре скалират с увеличаване на броя на нишките с които работим.
+1. Generate a graph, traverse the graph and save the result in a file. Also save the graph in a file.
 
-Добре е да уточним, че се фокусираме върху графи с много ребра (**dense graphs**) и за представянето ще използваме **матрица на съседство**.
+![](https://i.imgur.com/QRx2niW.png)
 
-## Анализ на проблема
+2. Read graph from file, traverse the graph and save the result in a file.
 
-Задачата е зададена с два варианта на изпълнение.
+![](https://i.imgur.com/aiURfGP.png)
 
-**Вариант 1: Генериране на граф**, обхождане на графа и записване на резултата и графа във файлове.
+### Problem decomposition
 
-![https://i.imgur.com/YJsk1vi.png](https://i.imgur.com/YJsk1vi.png)
+From the above two diagrams we can see we have a Pipes-and-Filters architecture. The reason is that each step depends on the previous one. We cannot start traversing a graph if we have no graph, hence we need to first generate or read one from file. Each step of the process depends on the data from the previous step. In order to achieve maximum speedup we will have to optimize each step and try to run it in parallel.
 
-**Вариант 2: Прочитане на граф от файл**, обхождане на графа и записване на резултата във файл.
+### Data Granularity
 
-![https://i.imgur.com/NbUqhbc.png](https://i.imgur.com/NbUqhbc.png)
+For our traversal algorithms we will use [medium-grained parallelism](https://en.wikipedia.org/wiki/Granularity_(parallel_computing)#Medium-grained_parallelism). We will define a task as 1 vertex.
 
-### Декомпозиция на проблема
+If we have very small graphs, this would be inefficient because of the overhead of starting up many threads. So for small graphs it's better to use coarse-grained parallelism. On the other end is fine-grained parallelism, that means that we would have to split the neighbors of every vertex between multiple processors. This would be a good optimizations if we have huge graphs, that cannot fit into memory, because with such big graphs we will potentially have way more neighbors and it could be beneficial to split them between more processors.
 
-От горните две диаграми на изпълнение на програмата може да видим, че имаме архитектура **Pipes & Filters**. Тъй като всяка следваща стъпка в програмата разчита на резултата от предишната, т.е имаме **зависимост по данни** (пр. Обхождането на граф предполага че разполагаме с граф, било то прочетен от файл или генериран). При такава архитектура на цялото приложение, за да постигнем максимално бързо изпълнение на многопроцесорна машина е необходимо да паралелизираме всяка една независима стъпка на програмата. Всяка операция, разделя данните с които работи за да може да ги обработи паралелно. Тоест имаме **SPMD** декомпозиция.
+Using medium-grained parallelism with relatively small graphs (10,000 - 50,000 vertices) will make great use of the processor's cache, which we will observe later in this document.
 
-### Гранулярност
+### Time complexity analysis
 
-Ще използваме **средна** грануларност от порядъка на 1 връх (т.е. 1 ред от матрицата на съседство). Избираме тази гранулярност, за да може да се възползваме от кеша на процесора и да получим максимално бързодействие на програмата. При по-финна гранулярност, кеша на процесора няма да бъде използван достатъчно оптимално и кодирането на заданията няма да е толкова просто, което ще доведе до забавяне в комуникацията. По-едра гранулярност няма да доведе до добро ниво на паралелизация на алгоритмите, поради факта че една нишка ще трябва да върши работата на няколко нишки при текущата избрана средна гранулярност.
+Let's look at the time complexity of different operations in order to determine which operations we should try to parallelize. If we can parallelize the slowest operations we can achieve the best speedup. We assume that we are working with dense graphs, i.e $|E| \rightarrow |V|^2$, where a graph is defined as G(V,E). V being the vertices, and E - edges.
+| Operation                         | Complexity                            |
+| --------------------------------- | ------------------------------------- |
+| Generate graph                    | $\Theta(|E|)=\Theta(|V|^2)$           |
+| Read graph from file              | $\Theta(|E|)=\Theta(|V|^2)$           |
+| Traverse graph                    | $\mathcal{O}(|E|)=\mathcal{O}(|V|^2)$ |
+| Write traversal result to file    | $\Theta(|V|)$                         |
+| Write graph to file               | $\Theta(|E|)=\Theta(|V|^2)$           |
 
-За доказателство на тези твърдения може да разгледаме времето, за което програмата се изпълнява при генериране на насочен (използва кеша на процесора) и ненасочен граф (не използва кеша достатъчно).
 
-### Сложност на операциите
+*Write traversal result to file* is the fastest operation as it scales linearly with the number of vertices. All other operations are slow - they scale quadratically with the number of vertices. Because of the granularity we are using and these complexities, to achieve the best speedup with more processors, we will try to parallelize the slow operations.
 
-За да преценим кои операции е удачно да бъдат паралелизирани трябва да оценим сложността на всяка една от тях. Като имаме в предвид че разглеждаме плътни графи, т.е $|E| \rightarrow |V|^2 $
+The following two images show the idea of parallelizing the slow operations.
 
-| Операция                                                    | Сложност                              |
-| ----------------------------------------------------------- | ------------------------------------- |
-| Генериране на граф $G(V,E)$                                 | $\Theta(|E|)=\Theta(|V|^2)$           |
-| Прочитане на граф от файл $G(V,E)$                          | $\Theta(|E|)=\Theta(|V|^2)$           |
-| Обхождане на граф $G(V,E)$                                  | $\mathcal{O}(|E|)=\mathcal{O}(|V|^2)$ |
-| Запаметяване на функцията на бащите $p(v)$ за граф $G(V,E)$ | $\Theta(|V|)$                         |
-| Запаметяване на граф $G(V,E)$ във файл                      | $\Theta(|E|)=\Theta(|V|^2)$           |
+### Parallel architecture for problem version 1
 
-Запаметяване на функцията на бащите е най-бързата операция - единствената такава, която скалира линейно спрямо броя на върховете. Всички останали операции са бавни - генериране, прочитане, обхождане и запаметяване на граф скалират квадратично спрямо броя на върховете на графа. За да постигнем максимално ускорение чрез използването на многонишков алгоритъм ще се фокусираме върху паралелизирането на бавните операции.
+![](https://i.imgur.com/Wekf79g.png)
 
-На следните 2 графики е представена архитектурата с операциите, които целим да направим многонишкови, за да ускорим тяхната обработка.
+### Parallel architecture for problem version 2
 
-### Многонишкова архитектура на Вариант 1: Генериране на граф
+![](https://i.imgur.com/6C0wuTa.png)
 
-![https://i.imgur.com/vYBb7yT.png](https://i.imgur.com/vYBb7yT.png)
+## Architecture of each operation
 
-### Многонишкова архитектура на Вариант 2: Прочитане на граф от файл
+For the parallel parts we will look at two approaches:
+1. Static data decomposition - each processor knows which part of the input to process beforehand. For static decomposition we will look at shared memory approach, because we can avoid all [race conditions](https://en.wikipedia.org/wiki/Race_condition).
+2. Dynamic data decomposition - each processor is instructed what part of the input to process in real time. For dynamic decomposition we will use Master-slaves architecture, where the master-thread assigns tasks to the worker-threads. This way the master-thread will be the load balancer and synchronizer at the same time.
 
-![https://i.imgur.com/H6KShGA.png](https://i.imgur.com/H6KShGA.png)
+### Static data decomposition architecture
 
-## Архитектура на отделните Операции
-
-Ще използваме 2 вида разпределение на задачите - динамично и статично. Където използваме **динамично разпределение** ще използваме **Master-slaves** архитектура. За **статично балансиране** ще използваме **споделена памет**.
-
-### Архитектура на операциите със статично балансиране
-
-При статично балансиране можем предварително да определим всеки един worker точно кои задачи трябва да изпълни, за това не е необходима синхронизация между тях, тъй като всеки worker работи независимо от останалите. За да не прехвърляме памет между отделните нишки използваме споделена памет за максимално бързодействие. Единствената синхронизация, която трябва да направим е основната нишка да изчака всички останали да приключат работата си - това може да направим с прост семафор.
+When using static data decomposition we can determine which tasks to assign each worker in advance. All workers work independently of one another and race conditions are impossible. We just need to make sure that all workers are done before we return the result and we can achieve this behavior with a simple semaphore. To save us some time we can use a shared memory block and assign each worker a section of the memory.
 
 ![https://i.imgur.com/pFsEimr.png](https://i.imgur.com/pFsEimr.png)
 
-### Архитектура на операциите с динамично балансиране
+### Dynamic data decomposition architecture
 
-При операциите с динамично балансиране ще използваме Master-slaves архитектура, като Master процеса се грижи за стартирането на worker процесите и задаването на задачите им. За да избегнем голямо натоварване от постоянно изпращане на съобщения между Master и worker нишките, използваме една синхронизирана опашка, където Master процеса само подава задачи за обработване, а worker нишките взимат задачи от тази опашка когато приключат обработването на предишната си задача. Синхронизираната опашка може да се окаже тясно място в системата, но както ще видим от резултатите от тестовете при графи с много върхове (много повече от процесорите с който разполагаме), не оказва влияние на ускорението.
+When using dynamic data decomposition we will use a master-slaves architecture, where one thread takes care of starting the worker threads and assigning them tasks. To avoid a big overhead of message passing between the master thread and the worker threads we can use a synchronized queue. The queue can be a bottleneck if we have too many processors, but when working with few processors (16 in our case) and large graphs (50,000 vertices) it won't be a problem as we will see from the test results.
 
 ![https://i.imgur.com/fDeMsyp.png](https://i.imgur.com/fDeMsyp.png)
 
-## Хардуер за извършване на тестовете
+## Hardware used for testing
 
-Сравнението на алгоритмите, тяхната ефективност, възможност да бъдат паралелизирани и колко добре скалират с увеличаване на броя на процесорите ще тестваме на Linux машина t5600. Тук са показани най-важните характеристики на тази машина, които ще имат значение за резултатите и изводите, които правим.
-
-Операционната система на машината е Linux 3.10. Необходимият софтуер е единствено компилатор на C++, Java и Go.
+To compare the algorithms performance and speedup we will be using a Linux machine with this hardware:
 
 **16-Core**
 
@@ -92,60 +86,60 @@ L1d cache:            32K
 RAM:                  64G
 ```
 
-## Избор на технологията
+It's important to note that we have 16 physical cores and 32 logical cores.
 
-Преди да разгледаме и анализираме алгоритми за всяка една операция, описана в горната точка, ще изберем подходяща технология за тестване.
+## Picking the right language for parallel processing
 
-Ще разгледаме Java, C++ и Go. Ще тестваме предимствата и недостатъците на всяка една технология като използваме един и същ алгоритъм за генериране на насочен граф.
+Before experimenting with different parallelization methods we will have to pick the right programming language for the job.
 
-Всеки тест е повторен по 3 пъти на машината **16-Core**. Но тъй като избирането на технология не е фокус на този документ, ще разгледаме само най-добрите резултати от тестванет на базата на които ще направим изводи.
+We'll take a look at Java, C++ and Go. We will be generating a directed graph, using the same algorithm. Each test is repeated 3 times to get rid of outliers. We will take into account only the best running time. Usually we want to compare the average running time, but using the best running time will give us a good enough comparison, especially when running a small number of tests.
 
-### Описание на алгоритъма за анализ на технологията
+### Algorithm for generating a directed graph
 
-Генерираме насочен граф. Използваме **статично балансиране** - разпределяме върховете на графа на броя на нишките с които работим. Всяка нишка обработва еднакъв брой върха на принципа на **Round-Robin**. По този начин всяка нишка генерира ребрата на равен брой върхове.
+To generate a directed graph, which is represented as a adjacency matrix (remember, we are working with dense graphs), we will need to generate a bunch of random zeros and ones. We will be using static data decomposition, meaning if we have K workers, then each worker will generate the K-th row of the matrix. This method is also known as Round-Robin scheduling. Using this method we make sure that the algorithm is not being slowed down by any synchronization barriers.
 
-Пример: ако имаме 16 нишки, то нишка 1 обработва върхове, чиито индекси дават модул 1 при деление на 16 (върхове 1, 17, 33, ...), нишка 3 обработва върховете, чиито индекси дават модул 3 при деление на 16 (върхове 3, 19, 35, ...).
+### Generating a directed graph using Java
 
-### Реализация на Java
-
-Резултат от тестването
+**Results for Math.random:**
 
 | Math.random | Threads | Vertices | Time (seconds) | Speedup |
 | ----------- | ------- | -------- | -------------- | ------- |
-|             | 1       | 10,000   | 3.0796         | 1       |
-|             | 4       | 10,000   | 26.1181        | 0.11    |
+| | 1       | 10,000   | 3.0796         | 1       |
+| | 4       | 10,000   | 26.1181        | 0.11    |
+
+**Results for ThreadLocalRandom:**
 
 | ThreadLocalRandom | Threads | Vertices | Time (seconds) | Speedup |
 | ----------------- | ------- | -------- | -------------- | ------- |
-|                   | 1       | 40,000   | 10.3472        | 1       |
-|                   | 4       | 40,000   | 3.4738         | 2.97    |
-|                   | 8       | 40,000   | 2.3720         | 4.36    |
-|                   | 16      | 40,000   | 2.0972         | 4.93    |
-|                   | 32      | 40,000   | 1.9776         | 5.23    |
+| | 1       | 40,000   | 10.3472        | 1       |
+| | 4       | 40,000   | 3.4738         | 2.97    |
+| | 8       | 40,000   | 2.3720         | 4.36    |
+| | 16      | 40,000   | 2.0972         | 4.93    |
+| | 32      | 40,000   | 1.9776         | 5.23    |
 
-**Извод**
+**Conclusion:**
 
-Java има два вградени метода за генериране на случайни числа.
+_Math.random_ - Very slow random number generator, because it's not designed for multithreaded apps. Tests with more threads are pointless because introducing more threads seems to slow down the algorithm immensely.
 
-**Math.random** - изключително бавен метод за генериране на случайни числа, който се забавя 10x когато увеличим броят на нишките от 1 на 4. Повече тестове не са необходими. Math.random е неблагоприятен за паралелно обработване.
+_ThreadLocalRandom_ - Quick random number generator which improves its performance when using more threads. Sadly the speedup is not that great because with 16 cores we are seeing only 5x speedup (best speedup would be 16x). It's a much better random generator than _Math.random_, but it's still not great.
 
-**ThreadLocalRandom** - бърз алгоритъм за генериране на случайни числа, който работи добре с повече нишки. За съжаление ускорението не се доближава до оптималното линейно като при 16 нишки достигаме 5x ускорение, при оптимално 16x. ThreadLocalRandom е значително по-добър от Math.random, но не е достатъчно добър за оптимални резултати.
+I'm sure Java has many more ways to generate random numbers and there is one that is great, but I will stop here. Java runs in multithreaded mode by default and measuring the real speedup is really hard. Also, controlling the actual number of threads running is a pain, if at all doable.
 
-> Java не е подходяща технология, защото не предоставя достатъчно добро ускорение с увеличаване на броя на нишките на които работим
+### Generating a directed graph using C++
 
-### Реализация на C++
-
-Резултати от тестването
+**Results for Mersenne Twister algorithm:**
 
 | Mersenne Twister | Threads | Vertices | Time (seconds) | Speedup |
 | ---------------- | ------- | -------- | -------------- | ------- |
-| Non-Threaded     | 1       | 10,000   | 32 минути      | 1       |
-| Non-Threaded     | 16      | 10,000   | 43 минути      | 0.74    |
+| Non-Threaded     | 1       | 10,000   | 32 minutes     | 1       |
+| Non-Threaded     | 16      | 10,000   | 43 minutes     | 0.74    |
 | Threaded         | 1       | 10,000   | 6.8707         | 1       |
 | Threaded         | 4       | 10,000   | 1.7845         | 3.85    |
 | Threaded         | 8       | 10,000   | 0.9108         | 7.54    |
 | Threaded         | 16      | 10,000   | 0.5386         | 12.75   |
 | Threaded         | 32      | 10,000   | 0.4383         | 15.67   |
+
+**Results for Marsaglia's xorshf algorithm:**
 
 | Marsaglia's xorshf | Threads | Vertices | Time (seconds) | Speedup |
 | ------------------ | ------- | -------- | -------------- | ------- |
@@ -157,6 +151,8 @@ Java има два вградени метода за генериране на 
 | Threaded           | 16      | 20,000   | 0.3204         | 10.71   |
 | Threaded           | 32      | 20,000   | 0.2857         | 12      |
 
+**Comparison of Mersenne Twister and Marsaglia's xorshf on large graphs:**
+
 | Algorithm (threaded) | Threads | Vertices | Time (seconds) | Speedup |
 | -------------------- | ------- | -------- | -------------- | ------- |
 | Mersenne Twister     | 1       | 50,000   | 172.0770       | 1       |
@@ -166,21 +162,21 @@ Java има два вградени метода за генериране на 
 | Marsaglia's xorshf   | 16      | 50,000   | 1.6168         | 13.28   |
 | Marsaglia's xorshf   | 32      | 50,000   | 1.6420         | 13      |
 
-**Извод**
+**Conclusion:**
 
-Разглеждаме вграденият в C++ Mersenne Twister алгоритъм и имплементация на Marsaglia's xorshf.
+For C++ we will take a look at the built-in Mersenne Twister algorithm. We will compare it to an implementation of Marsaglia's xorshf. As you can see when running the tests for Mersenne Twister, a graph with 10,000 vertices (generating 10^8 random numbers) could give us a good idea of the speedup, however for Marsaglia's algorithm 10,000 vertices were not enough to measure a significant difference, so I bumped up the vertices to 20,000 (4 x 10^8 random numbers). Because of the different number of vertices used, I also ran both algorithms on graphs with 50,000 vertices (25 x 10^8 random numbers).
 
-**Mersenne Twister** работи сравнително бавно, за това тестваме с по-малък брой върхове. Въпреки това алгоритъма предоставя много добро ускорение в сравнение с Java, като при 16 нишки получаваме ускорение 12.17x.
+_Mersenne Twister_ is relatively slow, but we get a really good speedup of 12.75 with 16 threads (already much better than Java). And the speedup goes up to 18x when ran on 32 threads and a larger graph.
 
-**Marsaglia's xorshf** e в пъти по-бърз от Mersenne Twister. Поради тази причина увеличаваме броят на върховете на 20,000, за да може да оценим ускорението. Алгоритъмът не скалира толкова добре спрямо броят нишки като при 16 нишки получаваме 10.71x ускорение, което е 2 пъти по-добро от това на Java, но е значително по-лошо от ускорението на Mersenne Twister.
+_Marsaglia's xorshf_ is much faster than Mersenne Twister. The algorithm doesn't scale as well as Mersenne Twister as it achieves only 10.71 speedup on 16 threads. It performs a little bit better (13x) speedup when ran on 16/32 threads.
 
->  За голям брой върхове въпреки че ускорението на Marsaglia's xorshf е по-лошо от това на Mersenne Twister, Marsaglia's xorshf работи по-бързо и би бил-по-добрият избор за малък брой ядра (16).
+If we have a lot of CPUs (much more than 16) it could be beneficial to use Mersenne Twister. However, when using 16 CPUs Marsaglia's xorshf is much faster and outperforms Mersenne Twister.
 
-### Реализация на Go
+### Generating a directed graph using Go
 
-Резултати от тестовете
+**Results for Cryptographic pseudo-random number sequence generator ():**
 
-| Cryptographic pseudo-random number sequence generator (CPRNG) | Threads | Vertices | Time (seconds) | Speedup |
+| CPRNG | Threads | Vertices | Time (seconds) | Speedup |
 | ------------------------------------------------------------ | ------- | -------- | -------------- | ------- |
 |                                                              | 1       | 40,000   | 12.8282        | 1       |
 |                                                              | 4       | 40,000   | 6.3824         | 2       |
@@ -188,7 +184,9 @@ Java има два вградени метода за генериране на 
 |                                                              | 16      | 40,000   | 5.7462         | 2.23    |
 |                                                              | 32      | 40,000   | 6.7325         | 1.9     |
 
-| Pseudo-random number generator (PRNG) | Threads | Vertices | Time (seconds) | Speedup |
+**Results for Pseudo-random number generator (PRNG):**
+
+| PRNG | Threads | Vertices | Time (seconds) | Speedup |
 | ------------------------------------- | ------- | -------- | -------------- | ------- |
 |                                       | 1       | 40,000   | 33.8937        | 1       |
 |                                       | 4       | 40,000   | 8.3982         | 4       |
@@ -196,7 +194,9 @@ Java има два вградени метода за генериране на 
 |                                       | 16      | 40,000   | 2.4213         | 14      |
 |                                       | 32      | 40,000   | 2.1362         | 15.86   |
 
-| Pseudo-random number sequence generator (PRNG Sequence) | Threads | Vertices | Time (seconds) | Speedup |
+**Results for Pseudo-random number sequence generator (PRNG Sequence):**
+
+| PRNG Sequence | Threads | Vertices | Time (seconds) | Speedup |
 | ------------------------------------------------------- | ------- | -------- | -------------- | ------- |
 |                                                         | 1       | 40,000   | 4.5132         | 1       |
 |                                                         | 4       | 40,000   | 1.2269         | 3.67    |
@@ -204,21 +204,21 @@ Java има два вградени метода за генериране на 
 |                                                         | 16      | 40,000   | 0.3996         | 11.29   |
 |                                                         | 32      | 40,000   | 0.3498         | 12.9    |
 
-**Извод**
+**Conclusion:**
 
-Go има 2 начина за генериране на случайни числа - криптографски (недетерминиран) и псевдо-случаен генератор (детерминиран).
+I tried 2 ways to generate random numbers in Go - cryptographic (non-deterministic) and pseudo-random (deterministic).
 
-Cryptographic pseudo-random number sequence generator (**CPRNG**) генерира случайни числа по недетерминистичен начин. Това забавя работата му изключително много и получаваме ускорение само 2.23x при 16 нишки.
+Cryptographic pseudo-random number sequence generator (_CPRNG_) geneates random numbers in a non-deterministic way. This makes it a slow algorithm which has only 2.23x speedup on 16 threads, which is pretty bad.
 
-Pseudo-random number generator (**PRNG**) генерира случайни числа по детерминистичен начин. Това позволява много по-добро ускорение с използването на повече нишки - до 14x ускорение.
+Pseudo-random number generator (**PRNG**) generates random number in a deterministic way. This allows for a much better speedup - up to 14x on 16 threads.
 
-Ако използваме locality на данните и генерираме поредица от случайни числа (**PRNG Sequence**) получаваме само 11.29x ускорение на 16 нишки, но поради locality получаваме 6 пъти по-добро време.
+There is one more way to generate random numbers in our case - to generate a sequence, which is actually very convenient in our case because we want to generate a row of the adjancency matrix. Using Pseudo-random number sequence generator we get 11.12x speedup, wich is worse than the 14x speedup we get from _PRNG_. Despite the worse speedup, the run time is much lower, because of data locality.
 
-> За машина с малък брой ядра (16) PRNG Sequence е по-подходящ и работи по-бързо от PRNG, въпреки че не скалира толкова добре с броя нишки. Ако увеличим броят логически ядра на процесора или броят върхове PRNG ще е по-добрият алгоритъм.
+In conclusion, if we have a small number of CPUs (16 in our case) PRNG Sequence works better than PRNG. But if we had way more CPUs, it would be more beneficial to use PRNG, because it scales better with more CPUs.
 
-### Заключение
+### Conclusion on choosing a programming language
 
-| **Threads**                | **1** | **4** | **8** | **16** | **32** |
+| **Algorithm\Threads**                | **1** | **4** | **8** | **16** | **32** |
 | -------------------------- | ----- | ----- | ----- | ------ | ------ |
 | **C++ Mersenne Twister**   | 1     | 3.85  | 7.54  | 12.75  | 15.67  |
 | **C++ Marsaglia's xorshf** | 1     | 3.7   | 7.2   | 10.71  | 12     |
@@ -500,7 +500,7 @@ Breadth first traversal with Level barrier има едно тясно място
 
 Прочитането на граф от файл е бавна операция и зависи в голяма степен от хард диска с който разполагаме и под каква форма се съхраняват данните. В тестовете описани в този документ данните се съхраняват на един физически диск, не използваме разпределено съхранение на данните. Това довежда до ограничение на ефективността на паралелни алгоритми за прочитане на граф от файл.
 
-За прочитане на граф от файл използваме **статично балансиране** - разпределяме редовете във файла на броя на нишките с които работим. Статично балансиране е възможно защото знаем точният формат на файла, в който ще се съхранява графа. Всяка нишка обработва еднакъв брой редове от файла на принципа на **Round-Robin**. Пример: ако имаме 16 нишки, то нишка 1 обработва редовете от файла които дават модул 1 при деление на 16 (редове 1, 17, 33, ...). По този начин всяка нишка прочита ребрата на равен брой върхове. По този начин може да разпределим прочитането на ред от файла и обработването му (конвертиране до ребра на графа). Забавянето се получава от четенето на данни от диска. Обработването на данните се случва паралелно на всички нишки четат от един и същ файл и трябва да се изчакват.
+За прочитане на граф от файл използваме **статично балансиране** - разпределяме редовете във файла на броя на нишките с които работим. Статично балансиране е възможно защото знаем точният формат на файла, в който ще се съхранява графа. Всяка нишка обработва еднакъв брой редове от файла на принципа на **Round-Robin**. Пример: ако имаме 16 нишки, то нишка 1 обработва редовете от файла които дават модул 1 при деление на 16 (редове 1, 17, 33, ...). По този начин всяка ни��ка прочита ребрата на равен брой върхове. По този начин може да разпределим прочитането на ред от файла и обработването му (конвертиране до ребра на графа). Забавянето се получава от четенето на данни от диска. Обработването на данните се случва паралелно на всички нишки четат от един и същ файл и трябва да се изчакват.
 
 **Прочитане на граф с 50,000 върха (4.7 GB)**
 
